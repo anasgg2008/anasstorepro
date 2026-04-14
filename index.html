@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>شجرة المعلومات التفاعلية</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body { background-color: #050505; margin: 0; overflow: hidden; font-family: sans-serif; color: white; }
+        
+        .controls {
+            position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+            display: flex; gap: 15px; background: rgba(30, 0, 0, 0.9);
+            padding: 12px 20px; border-radius: 50px; border: 1px solid #ff0000;
+            box-shadow: 0 0 20px rgba(255, 0, 0, 0.4); z-index: 100;
+            transition: 0.5s;
+        }
+        
+        button {
+            background: #ff0000; border: none; color: white; width: 40px; height: 40px;
+            border-radius: 50%; font-size: 20px; cursor: pointer; transition: 0.2s;
+            display: flex; align-items: center; justify-content: center;
+        }
+
+        button:hover { transform: scale(1.1); background: #cc0000; }
+        .edit-mode .node { cursor: crosshair; }
+        .view-mode .controls { opacity: 0.2; }
+        .view-mode .controls:hover { opacity: 1; }
+
+        .node circle { stroke: #fff; stroke-width: 1.5px; transition: 0.3s; cursor: pointer; }
+        .node text { fill: #ccc; font-size: 13px; pointer-events: none; user-select: none; }
+        .link { fill: none; stroke: #400; stroke-width: 2px; transition: 0.5s; }
+        .selected circle { stroke: #ffff00 !important; stroke-width: 3px; r: 9; }
+        
+        #mode-indicator {
+            position: fixed; top: 10px; right: 10px; padding: 5px 15px;
+            border-radius: 20px; font-size: 12px; background: #333;
+        }
+    </style>
+</head>
+<body class="edit-mode">
+
+<div id="mode-indicator">وضع التعديل</div>
+
+<div class="controls">
+    <button id="add-btn" title="إضافة فرع واحد">+</button>
+    <button id="lock-btn" title="ختم الفرع">◯</button>
+    <button id="save-btn" style="background: #008000;" title="تم / عرض">✅</button>
+</div>
+
+<script>
+    let treeData = null;
+    let selectedNode = null;
+    let isEditMode = true;
+
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+
+    const rootName = prompt("أدخل اسم نقطة البداية:", "المستودع الرئيسي");
+    treeData = { name: rootName, children: [], _children: null };
+
+    const svg = d3.select("body").append("svg")
+        .attr("width", width)
+        .attr("height", height)
+        .call(d3.zoom().on("zoom", (e) => g.attr("transform", e.transform)))
+        .append("g");
+
+    const g = svg.append("g").attr("transform", "translate(100,0)");
+    const treeLayout = d3.tree().nodeSize([60, 200]);
+
+    function update(source) {
+        const root = d3.hierarchy(treeData, d => d.children);
+        treeLayout(root);
+
+        const nodes = root.descendants();
+        const links = root.links();
+
+        // الرسم
+        const link = g.selectAll(".link")
+            .data(links, d => d.target.data.id || (d.target.data.id = Math.random()));
+
+        link.enter().append("path")
+            .attr("class", "link")
+            .merge(link)
+            .transition().duration(500)
+            .attr("d", d3.linkHorizontal().x(d => d.y).y(d => d.x));
+
+        link.exit().remove();
+
+        const node = g.selectAll(".node")
+            .data(nodes, d => d.data.id || (d.data.id = Math.random()));
+
+        const nodeEnter = node.enter().append("g")
+            .attr("class", "node")
+            .on("click", (event, d) => {
+                if (isEditMode) {
+                    // في وضع التعديل: نحدد العقدة
+                    selectedNode = d;
+                    d3.selectAll(".node").classed("selected", false);
+                    d3.select(event.currentTarget).classed("selected", true);
+                } else {
+                    // في وضع العرض: فتح وإغلاق (Toggle)
+                    if (d.data.children) {
+                        d.data._children = d.data.children;
+                        d.data.children = null;
+                    } else {
+                        d.data.children = d.data._children;
+                        d.data._children = null;
+                    }
+                    update(d);
+                }
+            });
+
+        nodeEnter.append("circle").attr("r", 8);
+        nodeEnter.append("text")
+            .attr("dy", ".35em")
+            .attr("x", d => d.data.children || d.data._children ? -15 : 15)
+            .attr("text-anchor", d => d.data.children || d.data._children ? "end" : "start");
+
+        const nodeUpdate = nodeEnter.merge(node);
+        nodeUpdate.transition().duration(500)
+            .attr("transform", d => `translate(${d.y},${d.x})`);
+
+        nodeUpdate.select("circle")
+            .style("fill", d => {
+                const shade = Math.max(40, 255 - (d.depth * 50));
+                return d.data._children ? "#fff" : `rgb(${shade}, 0, 0)`; // أبيض إذا كانت مطوية
+            });
+
+        nodeUpdate.select("text").text(d => d.data.name);
+
+        node.exit().remove();
+    }
+
+    // زر إضافة فرع واحد
+    document.getElementById("add-btn").addEventListener("click", () => {
+        if (!selectedNode || !isEditMode) return;
+        const name = prompt("اسم الفرع الجديد:");
+        if (name) {
+            if (!selectedNode.data.children) selectedNode.data.children = [];
+            selectedNode.data.children.push({ name: name, children: [], id: Math.random() });
+            update(selectedNode);
+        }
+    });
+
+    // زر الإنهاء / العرض
+    document.getElementById("save-btn").addEventListener("click", () => {
+        isEditMode = !isEditMode;
+        const btn = document.getElementById("save-btn");
+        const indicator = document.getElementById("mode-indicator");
+        
+        if (isEditMode) {
+            btn.innerHTML = "✅";
+            btn.style.background = "#008000";
+            indicator.innerHTML = "وضع التعديل";
+            document.body.className = "edit-mode";
+        } else {
+            btn.innerHTML = "✏️";
+            btn.style.background = "#444";
+            indicator.innerHTML = "وضع العرض (اضغط على العقد للفتح/الإغلاق)";
+            document.body.className = "view-mode";
+            d3.selectAll(".node").classed("selected", false);
+            selectedNode = null;
+        }
+    });
+
+    // زر الختم
+    document.getElementById("lock-btn").addEventListener("click", () => {
+        if (selectedNode && isEditMode) {
+            selectedNode.data.locked = true;
+            d3.select(".selected circle").style("stroke", "#ff0000").style("stroke-width", "5px");
+            alert("تم ختم هذا المسار");
+        }
+    });
+
+    update();
+</script>
+</body>
+</html>
