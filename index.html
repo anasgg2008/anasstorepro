@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Interactive OSINT Tree</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body { background-color: #000; margin: 0; overflow: hidden; font-family: sans-serif; }
+        .node circle { fill: #1e3a8a; stroke: #3b82f6; stroke-width: 2px; }
+        .node text { fill: #ccc; font-size: 14px; pointer-events: none; }
+        .link { fill: none; stroke: #444; stroke-width: 1.5px; transition: 0.3s; }
+        .node--internal circle { fill: #3b82f6; }
+        .node:hover circle { fill: #60a5fa; }
+    </style>
+</head>
+<body>
+
+<div id="tree-container"></div>
+
+<script>
+    // 1. بيانات الشجرة (تستطيع إضافة ما تريد هنا)
+    const data = {
+        name: "OSINT Framework",
+        children: [
+            {
+                name: "محركات البحث",
+                children: [
+                    { name: "Google" },
+                    { name: "Bing" },
+                    { name: "Shodan" }
+                ]
+            },
+            {
+                name: "التواصل الاجتماعي",
+                children: [
+                    { name: "Twitter" },
+                    { name: "Facebook" }
+                ]
+            },
+            { name: "أدوات الهاتف" }
+        ]
+    };
+
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    const margin = { top: 20, right: 120, bottom: 20, left: 120 };
+
+    const svg = d3.select("#tree-container").append("svg")
+        .attr("width", width)
+        .attr("height", height)
+        .append("g")
+        .attr("transform", `translate(${margin.left},${margin.top})`);
+
+    let i = 0;
+    const treemap = d3.tree().size([height - 100, width - 400]);
+    const root = d3.hierarchy(data, d => d.children);
+    root.x0 = height / 2;
+    root.y0 = 0;
+
+    // إغلاق جميع الفروع عند البداية
+    if (root.children) {
+        root.children.forEach(collapse);
+    }
+
+    update(root);
+
+    function collapse(d) {
+        if (d.children) {
+            d._children = d.children;
+            d._children.forEach(collapse);
+            d.children = null;
+        }
+    }
+
+    function update(source) {
+        const treeData = treemap(root);
+        const nodes = treeData.descendants();
+        const links = treeData.links();
+
+        nodes.forEach(d => d.y = d.depth * 180);
+
+        const node = svg.selectAll('g.node')
+            .data(nodes, d => d.id || (d.id = ++i));
+
+        const nodeEnter = node.enter().append('g')
+            .attr('class', 'node')
+            .attr("transform", d => `translate(${source.y0},${source.x0})`)
+            .on('click', (event, d) => {
+                if (d.children) {
+                    d._children = d.children;
+                    d.children = null;
+                } else {
+                    d.children = d._children;
+                    d._children = null;
+                }
+                update(d);
+            });
+
+        nodeEnter.append('circle').attr('r', 8);
+
+        nodeEnter.append('text')
+            .attr("dy", ".35em")
+            .attr("x", d => d.children || d._children ? -13 : 13)
+            .attr("text-anchor", d => d.children || d._children ? "end" : "start")
+            .text(d => d.data.name);
+
+        const nodeUpdate = nodeEnter.merge(node);
+        nodeUpdate.transition().duration(500)
+            .attr("transform", d => `translate(${d.y},${d.x})`);
+
+        const nodeExit = node.exit().transition().duration(500)
+            .attr("transform", d => `translate(${source.y},${source.x})`)
+            .remove();
+
+        const link = svg.selectAll('path.link')
+            .data(links, d => d.target.id);
+
+        const linkEnter = link.enter().insert('path', "g")
+            .attr("class", "link")
+            .attr('d', d => {
+                const o = { x: source.x0, y: source.y0 };
+                return diagonal(o, o);
+            });
+
+        link.merge(linkEnter).transition().duration(500)
+            .attr('d', d => diagonal(d.source, d.target));
+
+        link.exit().transition().duration(500)
+            .attr('d', d => {
+                const o = { x: source.x, y: source.y };
+                return diagonal(o, o);
+            }).remove();
+
+        nodes.forEach(d => {
+            d.x0 = d.x;
+            d.y0 = d.y;
+        });
+
+        function diagonal(s, d) {
+            return `M ${s.y} ${s.x}
+                    C ${(s.y + d.y) / 2} ${s.x},
+                      ${(s.y + d.y) / 2} ${d.x},
+                      ${d.y} ${d.x}`;
+        }
+    }
+</script>
+</body>
+</html>
