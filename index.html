@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>باني الشجرة الاستخباراتية</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body { background-color: #050505; margin: 0; overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: white; }
+        
+        /* تصميم الأزرار في الأسفل */
+        .controls {
+            position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+            display: flex; gap: 15px; background: rgba(30, 0, 0, 0.8);
+            padding: 15px 25px; border-radius: 50px; border: 1px solid #ff0000;
+            box-shadow: 0 0 15px rgba(255, 0, 0, 0.3); z-index: 100;
+        }
+        
+        button {
+            background: #ff0000; border: none; color: white; width: 45px; height: 45px;
+            border-radius: 50%; font-size: 24px; cursor: pointer; transition: 0.3s;
+            display: flex; align-items: center; justify-content: center;
+        }
+        
+        button:hover { background: #b30000; transform: scale(1.1); }
+        button:disabled { background: #444; cursor: not-allowed; }
+        .btn-circle { font-size: 14px; font-weight: bold; border: 2px solid white; }
+
+        /* ستايل الشجرة */
+        .node circle { stroke: #fff; stroke-width: 2px; transition: 0.3s; }
+        .node text { fill: #eee; font-size: 12px; transition: 0.3s; }
+        .link { fill: none; stroke: #400; stroke-width: 2px; }
+        .selected circle { stroke: #ffff00 !important; stroke-width: 4px; r: 10; }
+    </style>
+</head>
+<body>
+
+<div class="controls">
+    <button id="add-btn" title="إضافة فرعين">+</button>
+    <button id="lock-btn" class="btn-circle" title="ختم الفرع">◯</button>
+</div>
+
+<script>
+    let treeData = null;
+    let selectedNode = null;
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+
+    // 1. طلب اسم البداية
+    const rootName = prompt("أدخل اسم المستودع (نقطة البداية):", "المستودع الرئيسي");
+    if (rootName) {
+        treeData = { name: rootName, children: [] };
+    }
+
+    const svg = d3.select("body").append("svg")
+        .attr("width", width)
+        .attr("height", height)
+        .call(d3.zoom().on("zoom", (event) => g.attr("transform", event.transform)))
+        .append("g");
+
+    const g = svg.append("g").attr("transform", "translate(100,0)");
+    const treeLayout = d3.tree().nodeSize([50, 200]);
+
+    function getRedColor(depth) {
+        // كلما زاد العمق (depth) زاد الرقم، نطرحه من 255 ليصبح اللون أغمق
+        const shade = Math.max(50, 255 - (depth * 40));
+        return `rgb(${shade}, 0, 0)`;
+    }
+
+    function update() {
+        if (!treeData) return;
+
+        const root = d3.hierarchy(treeData);
+        treeLayout(root);
+
+        // رسم الروابط (الأسلاك)
+        const links = g.selectAll(".link")
+            .data(root.links(), d => d.target.data.id || (d.target.data.id = Math.random()));
+
+        links.enter().append("path")
+            .attr("class", "link")
+            .merge(links)
+            .attr("d", d3.linkHorizontal().x(d => d.y).y(d => d.x));
+
+        links.exit().remove();
+
+        // رسم العقد
+        const nodes = g.selectAll(".node")
+            .data(root.descendants(), d => d.data.id || (d.data.id = Math.random()));
+
+        const nodeEnter = nodes.enter().append("g")
+            .attr("class", "node")
+            .on("click", (event, d) => {
+                selectedNode = d;
+                d3.selectAll(".node").classed("selected", false);
+                d3.select(event.currentTarget).classed("selected", true);
+            });
+
+        nodeEnter.append("circle").attr("r", 7);
+        nodeEnter.append("text")
+            .attr("dy", ".35em")
+            .attr("x", d => d.children ? -15 : 15)
+            .attr("text-anchor", d => d.children ? "end" : "start");
+
+        const nodeUpdate = nodeEnter.merge(nodes);
+        nodeUpdate.attr("transform", d => `translate(${d.y},${d.x})`);
+        
+        nodeUpdate.select("circle")
+            .style("fill", d => getRedColor(d.depth));
+            
+        nodeUpdate.select("text").text(d => d.data.name);
+
+        nodes.exit().remove();
+    }
+
+    // زر إضافة فروع (+)
+    document.getElementById("add-btn").addEventListener("click", () => {
+        if (!selectedNode) {
+            alert("يرجى الضغط على عقدة أولاً لتحديدها");
+            return;
+        }
+        if (selectedNode.data.locked) {
+            alert("هذا الفرع مختوم، لا يمكنك الإضافة إليه");
+            return;
+        }
+
+        const name1 = prompt("اسم الفرع الأول:");
+        const name2 = prompt("اسم الفرع الثاني:");
+        
+        if (name1 && name2) {
+            if (!selectedNode.data.children) selectedNode.data.children = [];
+            selectedNode.data.children.push({ name: name1, children: [] });
+            selectedNode.data.children.push({ name: name2, children: [] });
+            update();
+        }
+    });
+
+    // زر الختم (◯)
+    document.getElementById("lock-btn").addEventListener("click", () => {
+        if (selectedNode) {
+            selectedNode.data.locked = true;
+            alert("تم ختم الفرع: " + selectedNode.data.name);
+        }
+    });
+
+    update();
+</script>
+</body>
+</html>
